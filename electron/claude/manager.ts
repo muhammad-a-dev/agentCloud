@@ -13,9 +13,16 @@ import {
   BROWSER_GUIDE, MODEL_IDS, browserOptions, classifyError, claudeExecutable, friendlyFromCode, loadSdk, permissionOptions, sessionEnv, toolsFor
 } from './sdk'
 import { telegramChatFor } from '../telegram'
+import { mediaFromToolResult } from '../media'
+import { FIND_SKILLS, hasFindSkills } from './skillHub'
 import type { Capability } from '@shared/types'
 
 const MANAGER_CAPS: Capability[] = ['read', 'write', 'commands', 'web_search', 'web_fetch']
+
+/** The Manager carries only the find-skills skill, which keeps every chat turn small and cheap. */
+function managerSkills(): { caps: Capability[]; skills: string[] } {
+  return hasFindSkills() ? { caps: [...MANAGER_CAPS, 'skills'], skills: [FIND_SKILLS] } : { caps: MANAGER_CAPS, skills: [] }
+}
 
 /** Simple async queue used as the streaming-input prompt of a query. */
 class InputQueue implements AsyncIterable<SDK.SDKUserMessage> {
@@ -56,6 +63,12 @@ The user is NOT technical. Write the way you would text a friend who has never u
 - Say what you did, what happens next, and what you need from the user (if anything).
 - Be warm and positive. No long explanations unless they ask.`
 
+const MEDIA_GUIDE = `
+## Showing pictures, videos and files in the chat
+The chat shows media. Screenshots you take appear in the chat by themselves — don't copy or link them again unless the user wants to keep the file.
+To show any other picture, video, sound or document, save it as a file and link it: [name](file://path/inside/workspace) — the chat shows a preview.
+So when the user says "show me", "send me" or "take a screenshot and show it", make sure the file is saved and linked.`
+
 export function managerSystemPrompt(manager: Agent, opts: { telegram?: boolean } = {}): string {
   const s = settingsRepo.getAll()
   const connections = listMcpServers().map((m) => m.name)
@@ -85,15 +98,20 @@ For bigger jobs:
    Never ask more than 3 questions.
 2. Call list_agents. If someone on the team already fits, use them.
 3. Otherwise hire the right specialist:
-   - call find_skills with a few keywords about the job to see which skills (special know-how packs) are installed,
+   - ALWAYS call find_skills first with a few keywords about the job. It shows the skills (special know-how packs) already installed
+     AND the best matching skills from the online skills catalog.
+   - Choose the best skills for the job: the most fitting installed ones plus the best online one(s) — prefer 1,000+ installs and
+     well-known makers. Every new agent must get at least one fitting online skill; it is downloaded and added for you when you hire.
    - call hire_agent with a clear name, a role, detailed instructions shaped by the user's answers, the abilities it needs,
-     and the 1–6 most relevant skill names from find_skills (only names that find_skills returned).
+     and those 1–6 skills (installed names as-is, online ones by their id like owner/repo@skill — only ones find_skills returned).
+   - In your reply, mention in plain words which new skill you got for the agent (e.g. "I gave them a spreadsheet skill").
 4. create_task with a complete brief: the goal, the user's answers, exact deliverables (file names in the workspace), and what "done" looks like.
 5. start_task, then tell the user in one or two sentences who is working on it.
 Several tasks can run at the same time — split big jobs into parallel tasks when that helps.
 Tasks run in the background. When one finishes you get a message starting with "[agentCloud update]". Then tell the user what was done in plain words,
 link the task as [Task title](task://TASK_ID) and every file as [file name](file://relative/path/inside/workspace).
 Whenever the user must choose between options, use ask_user instead of listing options in text.
+${MEDIA_GUIDE}
 ${chrome ? BROWSER_GUIDE : ''}
 ${opts.telegram ? `
 ## The user is on Telegram
@@ -114,7 +132,8 @@ export function agentSystemPrompt(agent: Agent, mode: 'chat' | 'task'): string {
 You are a member of the user's agentCloud team, managed by ${s.managerName}.
 ${agent.instructions}
 
-The user is not technical: anything you write to them must use short sentences and everyday words, with no tech jargon.${agent.tools.includes('browser') && s.chromeEnabled ? `
+The user is not technical: anything you write to them must use short sentences and everyday words, with no tech jargon.
+${MEDIA_GUIDE}${agent.tools.includes('browser') && s.chromeEnabled ? `
 ${BROWSER_GUIDE}` : ''}
 Workspace folder (save every file you create here unless told otherwise): ${s.workspace ?? 'not set'}
 Use the ask_user tool only if you are truly blocked on a decision only the user can make.
@@ -177,12 +196,11 @@ export class ChatSession {
       cwd: s.workspace,
       model: MODEL_IDS[agent.model] ?? 'sonnet',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: isManager ? managerSystemPrompt(agent, { telegram: telegramChatFor(this.conversationId) !== null }) : agentSystemPrompt(agent, 'chat') },
-      // The Manager handles small jobs itself but skips skills — that keeps every chat turn small and cheap.
-      tools: isManager ? toolsFor(MANAGER_CAPS) : toolsFor(agent.tools),
+      tools: isManager ? toolsFor(managerSkills().caps) : toolsFor(agent.tools),
       mcpServers: { ...(restrictMcp ? mcpConfigsFor(agent.mcp) : {}), [APP_SERVER]: appServer },
       strictMcpConfig: restrictMcp,
       settingSources: ['user', 'project', 'local'],
-      skills: isManager ? [] : enabledSkillsFor(agent),
+      skills: isManager ? managerSkills().skills : enabledSkillsFor(agent),
       plugins: localPluginConfigs(),
       includePartialMessages: true,
       env: sessionEnv(),
@@ -267,7 +285,12 @@ export class ChatSession {
         for (const b of content as { type: string; tool_use_id?: string; content?: unknown; is_error?: boolean }[]) {
           if (b.type !== 'tool_result' || !b.tool_use_id) continue
           const item = this.tools.get(b.tool_use_id)
-          if (item) this.finishTool(item, toolResultText(b.content), !!b.is_error)
+          if (!item) continue
+          if (!b.is_error) {
+            const media = mediaFromToolResult(item.name, item.input, b.content)
+            if (media.length) item.media = media
+          }
+          this.finishTool(item, toolResultText(b.content), !!b.is_error)
         }
         return
       }

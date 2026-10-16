@@ -50,7 +50,8 @@ export function toolLabel(name: string, input: Record<string, unknown>): ToolLab
           read_page: 'Read the page in Chrome', get_page_text: 'Read the page in Chrome', find: 'Looked for something on the page',
           computer: 'Clicked and typed in Chrome', form_input: 'Filled in a form in Chrome', browser_batch: 'Did a few steps in Chrome'
         }
-        return { icon: Globe, verb: what[action] ?? 'Worked in your Chrome', target: action === 'navigate' ? url : undefined, technical: name }
+        const shot = action === 'computer' && input.action === 'screenshot'
+        return { icon: Globe, verb: shot ? 'Took a screenshot in Chrome' : what[action] ?? 'Worked in your Chrome', target: action === 'navigate' ? url : undefined, technical: name }
       }
       if (name.startsWith('mcp__')) {
         const [, server, tool] = name.split('__')

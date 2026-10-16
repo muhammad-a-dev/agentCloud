@@ -7,6 +7,7 @@ import { emit, toast } from '../events'
 import { askUser } from './interactions'
 import { listSkills } from './config'
 import { loadSdk } from './sdk'
+import { installFromCatalog, searchCatalog, type CatalogSkill } from './skillHub'
 import { cancelTask, isTaskRunning, startTask } from './agentRunner'
 
 export const APP_SERVER = 'agentcloud'
@@ -15,6 +16,8 @@ const text = (t: string, isError = false) => ({ content: [{ type: 'text' as cons
 
 const PALETTE = ['#F7A51C', '#F97316', '#EAB308', '#F59E0B', '#FB923C', '#FBBF24']
 const CAPS: [Capability, ...Capability[]] = ['read', 'write', 'commands', 'web_search', 'web_fetch', 'browser', 'skills', 'helpers']
+
+const isCatalogId = (s: string) => /^[\w.-]+(?:\/[\w.-]+)*@.+$/.test(s)
 
 function describeAgent(id: string | null) {
   if (!id) return 'unassigned'
@@ -33,6 +36,9 @@ export interface ToolContext {
 /** Full toolset for the Manager. */
 export async function managerServer(ctx: ToolContext): Promise<SDK.McpSdkServerConfigWithInstance> {
   const { createSdkMcpServer, tool } = await loadSdk()
+  // Per session: hiring is only allowed after a skills search, so every new agent gets the best skills.
+  let searched = false
+  let onlineFound = false
   return createSdkMcpServer({
     name: APP_SERVER,
     version: '1.0.0',
@@ -40,22 +46,38 @@ export async function managerServer(ctx: ToolContext): Promise<SDK.McpSdkServerC
     tools: [
       tool(
         'hire_agent',
-        'Hire a new specialist agent for the team. Use when no existing agent fits the work. Returns the new agent id.',
+        'Hire a new specialist agent for the team. Use when no existing agent fits the work. Call find_skills first. Returns the new agent id.',
         {
           name: z.string().describe('Short friendly name, e.g. "Research Agent"'),
           role: z.string().describe('One-line role, e.g. "Finds and compares information online"'),
           instructions: z.string().describe('Detailed system instructions describing how this agent should work'),
           tools: z.array(z.enum(CAPS)).optional().describe('Abilities: read, write, commands, web_search, web_fetch, browser (the user’s own Chrome), skills, helpers'),
-          skills: z.array(z.string()).optional().describe('1–6 skill names returned by find_skills that fit this job'),
+          skills: z.array(z.string()).optional().describe('1–6 skills from find_skills: installed skill names, and online skill ids (owner/repo@skill), which are downloaded automatically'),
+          no_download_reason: z.string().optional().describe('Only if no online skill from find_skills fits this job: say why'),
           model: z.enum(['smartest', 'balanced', 'fastest']).optional().describe('Default balanced')
         },
         async (a) => {
           const existing = agentsRepo.findByName(a.name)
           if (existing) return text(`An agent named "${a.name}" already exists with id ${existing.id}. Reuse it instead of hiring again.`)
+          if (!searched) return text('Call find_skills for this job first, then hire with the best skills it finds.', true)
+          const wanted = (a.skills ?? []).map((n) => n.trim()).filter(Boolean)
+          const online = wanted.filter(isCatalogId)
+          if (!online.length && onlineFound && !a.no_download_reason?.trim()) {
+            return text('Pick the best online skill from find_skills (an id like owner/repo@skill) and pass it in skills, so it is downloaded for this agent. If none fits, pass no_download_reason instead.', true)
+          }
+          const downloaded: string[] = []
+          const failed: string[] = []
+          for (const id of online) {
+            try {
+              downloaded.push(await installFromCatalog(id))
+            } catch {
+              failed.push(id)
+            }
+          }
           const count = agentsRepo.list().length
           const installed = new Set(listSkills().filter((s) => s.enabled).map((s) => s.name))
-          const skills = (a.skills ?? []).filter((n) => installed.has(n)).slice(0, 6)
-          const unknown = (a.skills ?? []).filter((n) => !installed.has(n))
+          const skills = [...new Set([...wanted.filter((n) => !isCatalogId(n)), ...downloaded])].filter((n) => installed.has(n)).slice(0, 6)
+          const unknown = wanted.filter((n) => !isCatalogId(n) && !installed.has(n))
           const tools = new Set<Capability>((a.tools as Capability[] | undefined) ?? ['read', 'write', 'commands', 'web_search', 'web_fetch', 'browser', 'skills'])
           if (skills.length) tools.add('skills')
           const agent = agentsRepo.save({
@@ -67,17 +89,24 @@ export async function managerServer(ctx: ToolContext): Promise<SDK.McpSdkServerC
           convRepo.create(agent.id, agent.name)
           emit({ type: 'agents:changed', hiredId: agent.id })
           emit({ type: 'conversations:changed' })
-          toast('success', `${agent.name} joined your team`)
-          return text(`Hired ${agent.name}. id: ${agent.id}${skills.length ? `. Skills: ${skills.join(', ')}` : ''}${unknown.length ? `. Not installed, so skipped: ${unknown.join(', ')}` : ''}`)
+          toast('success', `${agent.name} joined your team${downloaded.length ? ` with ${downloaded.length} new skill${downloaded.length === 1 ? '' : 's'}` : ''}`)
+          return text([
+            `Hired ${agent.name}. id: ${agent.id}`,
+            skills.length ? `Skills: ${skills.join(', ')}` : 'No skills.',
+            downloaded.length ? `Downloaded: ${downloaded.join(', ')}` : '',
+            failed.length ? `Could not download: ${failed.join(', ')}` : '',
+            unknown.length ? `Not installed, so skipped: ${unknown.join(', ')}` : ''
+          ].filter(Boolean).join('. '))
         }
       ),
       tool(
         'find_skills',
-        'Search the skills (special know-how packs) installed on this computer. Use before hire_agent to pick the right skills for the job.',
+        'Find skills (special know-how packs) for a job: searches the skills installed on this computer AND the online skills catalog. Use before hire_agent.',
         { query: z.string().describe('A few keywords about the job, e.g. "excel spreadsheet charts" or "seo blog writing"') },
         async ({ query }) => {
+          searched = true
           const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)
-          const scored = listSkills()
+          const local = listSkills()
             .filter((s) => s.enabled)
             .map((s) => {
               const name = s.name.toLowerCase()
@@ -87,9 +116,26 @@ export async function managerServer(ctx: ToolContext): Promise<SDK.McpSdkServerC
             })
             .filter((x) => x.score > 0)
             .sort((a, b) => b.score - a.score)
-            .slice(0, 12)
-          if (!scored.length) return text('No installed skills match. Hire the agent without skills — it can still do the job.')
-          return text(scored.map(({ s }) => `- ${s.name}: ${s.description.slice(0, 160)}`).join('\n'))
+            .slice(0, 10)
+          let online: CatalogSkill[] = []
+          let onlineError = ''
+          try {
+            online = (await searchCatalog(query)).slice(0, 10)
+          } catch (e) {
+            onlineError = e instanceof Error ? e.message : String(e)
+          }
+          onlineFound = online.length > 0
+          return text([
+            '## Installed on this computer (use the name)',
+            local.length ? local.map(({ s }) => `- ${s.name}: ${s.description.slice(0, 160)}`).join('\n') : 'None match.',
+            '',
+            '## Online catalog (use the id; it is downloaded when you hire). Most popular first.',
+            online.length
+              ? online.map((o) => `- ${o.id} — ${o.installs.toLocaleString('en-US')} installs${o.url ? ` (${o.url})` : ''}`).join('\n')
+              : onlineError || 'None found.',
+            '',
+            'Pick the best fit: prefer skills with 1,000+ installs from well-known sources (anthropics, vercel-labs, microsoft, the tool’s own maker). Avoid anything under 100 installs.'
+          ].join('\n'))
         }
       ),
       tool('list_agents', 'List the agents on the team, with ids, roles and whether they are busy.', {}, async () => {
@@ -217,7 +263,7 @@ export function activityFor(toolName: string, input: Record<string, unknown>, wh
     case 'get_task_status': return `${who} is checking on a task…`
     case 'WebSearch': return `${who} is searching the web…`
     case 'WebFetch': return `${who} is reading a web page…`
-    case 'find_skills': return `${who} is picking the right skills…`
+    case 'find_skills': return `${who} is looking for the best skills…`
     case 'Read': case 'Glob': case 'Grep': return `${who} is looking through files…`
     case 'Write': case 'Edit': return `${who} is writing…`
     case 'Bash': case 'PowerShell': return `${who} is running a command…`

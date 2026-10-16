@@ -17,6 +17,8 @@ import {
 import { answer } from './claude/interactions'
 import { abortAllChats, busyMap, deliverToManager, dropSession, resetIdleSessions, sessionFor } from './claude/manager'
 import { checkAuth, chromeStatus, claudeExecutable, clearApiKey, storeApiKey, workspaceOk } from './claude/sdk'
+import { ensureFindSkills } from './claude/skillHub'
+import { handleMediaProtocol, registerMediaScheme, workspacePath } from './media'
 import { connectTelegram, disconnectTelegram, newPairingCode, startTelegram, stopTelegram, telegramStatus, unlinkTelegramChat } from './telegram'
 
 // ---------------------------------------------------------------- crash safety
@@ -26,6 +28,8 @@ process.on('unhandledRejection', (e) => log.error('unhandledRejection', e))
 
 // Allows a separate profile (used for testing): AGENTCLOUD_USER_DATA=<folder>
 if (process.env.AGENTCLOUD_USER_DATA) app.setPath('userData', process.env.AGENTCLOUD_USER_DATA)
+
+registerMediaScheme()
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -97,12 +101,6 @@ function syncManager(s: Settings) {
     agentsRepo.save({ ...m, name: s.managerName, role: s.managerRole, avatar: s.managerAvatar })
     emit({ type: 'agents:changed' })
   }
-}
-
-function workspacePath(p: string): string {
-  const ws = settingsRepo.getAll().workspace ?? ''
-  const clean = p.replace(/^file:\/\//, '').replace(/^\/+(?=[A-Za-z]:)/, '')
-  return path.isAbsolute(clean) ? clean : path.join(ws, decodeURIComponent(clean))
 }
 
 // ---------------------------------------------------------------- IPC
@@ -550,7 +548,10 @@ app.whenReady().then(() => {
     dialog.showErrorBox('agentCloud could not start', 'Its data file could not be opened. Try restarting your computer. If that does not help, reinstall agentCloud.')
   }
   registerIpc()
+  handleMediaProtocol()
   createWindow()
+  // The Manager's find-skills skill: download it once, quietly, if it is missing.
+  void ensureFindSkills()
   try {
     startTelegram()
   } catch (e) {

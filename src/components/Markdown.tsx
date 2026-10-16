@@ -5,6 +5,7 @@ import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
 import { api } from '@/lib/ipc'
 import { useApp } from '@/stores/app'
+import { MediaPreview, mediaKind } from './Media'
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -49,7 +50,8 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
         urlTransform={(url) => url}
         components={{
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          a: ({ href, children }) => (
+          a: ({ href, children }) => {
+            const link = (
             <a
               href={href}
               onClick={(e) => {
@@ -63,8 +65,16 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
             >
               {children}
             </a>
-          ),
-          img: ({ src, alt }) => (typeof src === 'string' && /^https?:/.test(src) ? <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg my-2" /> : null)
+            )
+            // Links to pictures, videos and documents also get a preview right below.
+            if (href?.startsWith('file://') && mediaKind(href)) return <>{link}<MediaPreview path={href} name={textOf(children)} /></>
+            return link
+          },
+          img: ({ src, alt }) => {
+            if (typeof src !== 'string' || !src) return null
+            if (/^https?:/.test(src)) return <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg my-2" />
+            return mediaKind(src) ? <MediaPreview path={src} name={alt || undefined} /> : null
+          }
         }}
       >
         {text}

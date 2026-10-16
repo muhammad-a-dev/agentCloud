@@ -208,6 +208,18 @@ async function relay(conversationId: string, item: ChatItem) {
       if (id) promptMessages.set(item.id, { chatId, messageId: id })
       return
     }
+    case 'tool':
+      if (item.status !== 'done' || !item.media?.length) return
+      sentItems.add(item.id)
+      for (const m of item.media) {
+        const full = path.isAbsolute(m.path) ? m.path : path.join(settingsRepo.getAll().workspace ?? '', m.path)
+        try {
+          if (fs.existsSync(full) && fs.statSync(full).size <= MAX_FILE_BYTES) await sendDocument(chatId, full, m.name)
+        } catch (e) {
+          log.warn('telegram media send failed', e)
+        }
+      }
+      return
     case 'notice':
       if (item.level === 'info') return
       sentItems.add(item.id)

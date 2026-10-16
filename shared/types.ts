@@ -34,9 +34,16 @@ export interface Conversation {
   preview?: string
 }
 
+/** A picture, video or document shown in the chat. */
+export interface MediaRef {
+  /** Absolute, or relative to the workspace. */
+  path: string
+  name: string
+}
+
 export type ChatItem =
   | { kind: 'text'; id: string; role: 'user' | 'assistant'; text: string; attachments?: string[]; createdAt: number; queued?: boolean; source?: 'telegram' }
-  | { kind: 'tool'; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: string; isError?: boolean; status: 'running' | 'done' | 'error'; createdAt: number }
+  | { kind: 'tool'; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: string; isError?: boolean; media?: MediaRef[]; status: 'running' | 'done' | 'error'; createdAt: number }
   | { kind: 'question'; id: string; question: string; options: string[]; allowCustom: boolean; from?: string; taskId?: string; answer?: string; dismissed?: boolean; createdAt: number }
   | { kind: 'permission'; id: string; toolName: string; input: Record<string, unknown>; from?: string; taskId?: string; decision?: 'allow' | 'deny'; createdAt: number }
   | { kind: 'notice'; id: string; level: 'info' | 'success' | 'warning' | 'error'; text: string; taskId?: string; createdAt: number }

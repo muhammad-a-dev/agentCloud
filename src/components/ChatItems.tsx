@@ -7,6 +7,7 @@ import { api } from '@/lib/ipc'
 import { toolLabel } from '@/lib/toolLabels'
 import { useApp } from '@/stores/app'
 import { Markdown } from './Markdown'
+import { MediaPreview, mediaKind } from './Media'
 import { Button } from './ui'
 
 const appear = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.18, ease: 'easeOut' as const } }
@@ -17,6 +18,11 @@ export function TextBubble({ item }: { item: ChatItem & { kind: 'text' } }) {
       <motion.div {...appear} className="flex justify-end">
         <div className={cx('max-w-[640px] bg-user rounded-2xl px-4 py-[11px] text-[15px] leading-[1.6]', item.queued && 'opacity-70')}>
           <div className="whitespace-pre-wrap break-words selectable">{item.text}</div>
+          {item.attachments?.some((a) => mediaKind(a) === 'image') && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {item.attachments.filter((a) => mediaKind(a) === 'image').map((a) => <MediaPreview key={a} path={a} compact />)}
+            </div>
+          )}
           {!!item.attachments?.length && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {item.attachments.map((a) => (
@@ -84,6 +90,11 @@ export function ToolCard({ item }: { item: ChatItem & { kind: 'tool' } }) {
             <ChevronDown size={15} className={cx('text-muted transition', open && 'rotate-180')} />
           </span>
         </button>
+        {!!item.media?.length && (
+          <div className="border-t border-line px-3 py-1">
+            {item.media.map((m) => <MediaPreview key={m.path} path={m.path} name={m.name} />)}
+          </div>
+        )}
         <AnimatePresence initial={false}>
           {open && (
             <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
