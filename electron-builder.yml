@@ -1,0 +1,40 @@
+appId: com.agentcloud.app
+productName: agentCloud
+copyright: Copyright © 2026 agentCloud
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - resources/**
+  - package.json
+  - "!**/*.map"
+asarUnpack:
+  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
+  - node_modules/better-sqlite3/**
+  - resources/**
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  executableName: agentCloud
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: agentCloud
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  artifactName: agentCloud-Setup-${version}.${ext}
+mac:
+  target: dmg
+  icon: resources/icon.png
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  icon: resources/icon.png
+  category: Utility
