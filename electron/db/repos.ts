@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   managerAvatar: 'drake',
   managerPersona: 'Warm, upbeat and to the point. Explains things in plain language without jargon.',
   userName: '',
+  userAvatar: '',
   theme: 'dark',
   launchOnStartup: false,
   notifications: true,
@@ -201,6 +202,13 @@ export const convRepo = {
   },
   touch(id: string) {
     getDb().prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(now(), id)
+  },
+  /** Remove every message and forget the Claude session, so the next message starts fresh. */
+  clear(id: string) {
+    getDb().transaction(() => {
+      getDb().prepare('DELETE FROM messages WHERE conversation_id = ?').run(id)
+      getDb().prepare('UPDATE conversations SET sdk_session_id = NULL, updated_at = ? WHERE id = ?').run(now(), id)
+    })()
   },
   delete(id: string) {
     getDb().transaction(() => {

@@ -7,11 +7,12 @@ import type { Task } from '@shared/types'
 import { agentsRepo, convRepo, settingsRepo, tasksRepo, usageRepo } from '../db/repos'
 import { emit } from '../events'
 import { log } from '../logging'
-import { APP_SERVER, agentServer } from './appTools'
+import { agentServer } from './appTools'
 import { enabledSkillsFor, localPluginConfigs, mcpConfigsFor } from './config'
 import { SAFE_TOOLS, cancelWaitersForTask, notifyDesktop, pushItem, requestPermission } from './interactions'
 import { agentSystemPrompt, deliverToManager, managerConversationFor } from './manager'
-import { MODEL_IDS, browserOptions, classifyError, claudeExecutable, friendlyFromCode, loadSdk, permissionOptions, sessionEnv, toolsFor } from './sdk'
+import { isWorkflowConversation } from '../workflows'
+import { APP_SERVER, MODEL_IDS, browserOptions, classifyError, claudeExecutable, friendlyFromCode, loadSdk, permissionOptions, sessionEnv, toolsFor } from './sdk'
 
 interface Running { ac: AbortController; cancelled: boolean }
 const running = new Map<string, Running>()
@@ -114,7 +115,9 @@ function snapshot(root: string, limit = 5000): Map<string, number> {
 async function execute(task: Task, agent: NonNullable<ReturnType<typeof agentsRepo.get>>, run: Running, resume?: string) {
   const s = settingsRepo.getAll()
   const before = snapshot(s.workspace!)
-  const conversationId = task.conversationId ?? (agentsRepo.manager() ? convRepo.latestForAgent(agentsRepo.manager()!.id)?.id : null) ?? ''
+  // Workflow steps ask their questions in the Manager chat.
+  const fromWorkflow = isWorkflowConversation(task.conversationId)
+  const conversationId = (fromWorkflow ? managerConversationFor(null) : task.conversationId) ?? (agentsRepo.manager() ? convRepo.latestForAgent(agentsRepo.manager()!.id)?.id : null) ?? ''
   const files = new Set(task.filesChanged)
   let finalText = ''
   let costUsd = task.costUsd
@@ -241,6 +244,8 @@ async function execute(task: Task, agent: NonNullable<ReturnType<typeof agentsRe
   update(task.id, { status: 'done', report, finishedAt: Date.now(), lastActivity: 'Finished', costUsd, tokens })
   event(task.id, 'report', { text: report })
   emit({ type: 'task:celebrate', taskId: task.id })
+  // The workflow reports once at the end instead of after every step.
+  if (fromWorkflow) return
   notifyDesktop(`${agent.name} finished “${task.title}”`, 'Open agentCloud to see the results.')
   const fileList = [...files]
   await deliverToManager(

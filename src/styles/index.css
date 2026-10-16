@@ -271,3 +271,22 @@ textarea,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------- workflow canvas */
+@keyframes wfdash { to { stroke-dashoffset: -26; } }
+@keyframes wfpulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgba(247, 165, 28, 0.35); }
+  50% { box-shadow: 0 0 0 3px var(--accent), 0 0 34px rgba(247, 165, 28, 0.6); }
+}
+.wf-running { animation: wfpulse 1.4s ease-in-out infinite; border-color: var(--accent) !important; }
+.wf-canvas { background: var(--bg); }
+.wf-canvas .react-flow__node { cursor: grab; }
+.wf-canvas .react-flow__node.dragging { cursor: grabbing; }
+.wf-canvas .wf-handle { width: 12px; height: 12px; background: var(--card-2); border: 2px solid var(--accent); transition: transform 0.15s; }
+.wf-canvas .wf-handle:hover { transform: scale(1.4); background: var(--accent); }
+.wf-canvas .react-flow__controls { box-shadow: none; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.wf-canvas .react-flow__controls-button { background: var(--card-2); border-color: var(--border); color: var(--text); }
+.wf-canvas .react-flow__controls-button:hover { background: var(--card-hover); }
+.wf-canvas .react-flow__controls-button svg { fill: currentColor; }
+.wf-canvas .react-flow__minimap { background: var(--sidebar); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.wf-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: var(--text-2) !important; }

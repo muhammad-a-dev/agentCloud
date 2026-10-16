@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { LayoutGrid, Mail, MessageSquarePlus, Plus, Search, Settings as SettingsIcon, Users, Code2, FileText, Trash2, Pencil, Compass } from 'lucide-react'
+import { CalendarClock, Workflow, LayoutGrid, Mail, MessageSquarePlus, Plus, Search, Settings as SettingsIcon, Users, Code2, FileText, Trash2, Pencil, Compass } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { Conversation } from '@shared/types'
 import { cx } from '@/lib/format'
@@ -9,7 +9,8 @@ import { AgentAvatar, ManagerAvatar, UserAvatar } from './Avatars'
 import { Confirm, IconButton, Tooltip } from './ui'
 
 export function Sidebar() {
-  const { agents, conversations, activeConversationId, route, tasks, settings, busy, justHired } = useApp()
+  const { agents, conversations, activeConversationId, route, tasks, settings, busy, justHired, workflows } = useApp()
+  const workflowsRunning = workflows.filter((w) => w.lastRun?.status === 'running').length
   const { openConversation, newChat, setRoute, setSearch, openSettings, setTour } = useApp()
   const [menu, setMenu] = useState<{ conv: Conversation; x: number; y: number } | null>(null)
   const [userMenu, setUserMenu] = useState(false)
@@ -28,6 +29,12 @@ export function Sidebar() {
         </IconButton>
         <IconButton label="Team" onClick={() => setRoute('team')} className={cx(route === 'team' && 'bg-card-hover')}>
           <Users size={15} />
+        </IconButton>
+        <IconButton label="Design Workflow" onClick={() => setRoute('workflows')} className={cx(route === 'workflows' && 'bg-card-hover')} badge={workflowsRunning}>
+          <Workflow size={15} />
+        </IconButton>
+        <IconButton label="Schedule" onClick={() => setRoute('schedule')} className={cx(route === 'schedule' && 'bg-card-hover')}>
+          <CalendarClock size={15} />
         </IconButton>
         <IconButton label="Search (Ctrl+K)" onClick={() => setSearch(true)}>
           <Search size={16} strokeWidth={2.2} />
@@ -106,7 +113,7 @@ export function Sidebar() {
       <div className="h-[76px] shrink-0 flex items-center gap-3 px-[18px] relative">
         <Tooltip label="You — settings and help" side="top">
           <button aria-label="Your menu" onClick={() => setUserMenu((v) => !v)} className="rounded-full hover:brightness-125 transition">
-            <UserAvatar name={settings?.userName || 'Me'} size={42} />
+            <UserAvatar name={settings?.userName || 'Me'} avatar={settings?.userAvatar} size={42} />
           </button>
         </Tooltip>
         <button

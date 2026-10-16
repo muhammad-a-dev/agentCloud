@@ -84,6 +84,19 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   CREATE INDEX idx_usage_day ON usage(day);
+  `,
+  // 3 — visual workflows and schedules (stored as JSON documents)
+  `
+  CREATE TABLE workflows (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE schedules (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL,
+    next_run_at INTEGER
+  );
   `
 ]
 

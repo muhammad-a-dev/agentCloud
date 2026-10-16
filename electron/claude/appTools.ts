@@ -6,11 +6,13 @@ import { agentsRepo, convRepo, tasksRepo } from '../db/repos'
 import { emit, toast } from '../events'
 import { askUser } from './interactions'
 import { listSkills } from './config'
-import { loadSdk } from './sdk'
+import { APP_SERVER, loadSdk } from './sdk'
 import { installFromCatalog, searchCatalog, type CatalogSkill } from './skillHub'
+import { describeRepeat, saveSchedule, schedulesRepo } from '../scheduler'
+import { runWorkflow, workflowsRepo } from '../workflows'
 import { cancelTask, isTaskRunning, startTask } from './agentRunner'
 
-export const APP_SERVER = 'agentcloud'
+export { APP_SERVER }
 
 const text = (t: string, isError = false) => ({ content: [{ type: 'text' as const, text: t }], ...(isError ? { isError: true } : {}) })
 
@@ -204,6 +206,47 @@ export async function managerServer(ctx: ToolContext): Promise<SDK.McpSdkServerC
           ].filter(Boolean).join('\n')
         )
       }),
+      tool(
+        'schedule_job',
+        'Schedule a job for later or on repeat: give an agent a job, or run a saved workflow. Times are the user’s local time.',
+        {
+          title: z.string().describe('Short name, e.g. "Weekly sales report"'),
+          agent_id: z.string().optional().describe('Agent who does the job (from list_agents). Use this OR workflow_id.'),
+          workflow_id: z.string().optional().describe('Workflow to run (from list_workflows)'),
+          job: z.string().optional().describe('Full brief for the agent: what to do and what to deliver'),
+          repeat: z.enum(['once', 'hourly', 'daily', 'weekdays', 'weekly', 'monthly']),
+          time: z.string().describe('HH:MM, 24-hour'),
+          date: z.string().optional().describe('YYYY-MM-DD, needed when repeat is once'),
+          weekday: z.number().int().min(0).max(6).optional().describe('0 = Sunday … 6 = Saturday, for weekly'),
+          day_of_month: z.number().int().min(1).max(28).optional().describe('For monthly')
+        },
+        async (a) => {
+          try {
+            const s = saveSchedule({
+              title: a.title, kind: a.workflow_id ? 'workflow' : 'agent', workflowId: a.workflow_id ?? null,
+              agentId: a.agent_id ? (agentsRepo.get(a.agent_id) ?? agentsRepo.findByName(a.agent_id))?.id ?? null : null,
+              prompt: a.job ?? '', repeat: a.repeat, time: a.time, date: a.date ?? null, weekday: a.weekday, dayOfMonth: a.day_of_month
+            })
+            return text(`Scheduled "${s.title}": ${describeRepeat(s)}. Next run: ${s.nextRunAt ? new Date(s.nextRunAt).toLocaleString() : 'none'}. The user can see it on the Schedule page.`)
+          } catch (e) {
+            return text(e instanceof Error ? e.message : String(e), true)
+          }
+        }
+      ),
+      tool('list_schedules', 'List scheduled jobs with their next run time.', {}, async () => {
+        const list = schedulesRepo.list()
+        if (!list.length) return text('Nothing is scheduled yet.')
+        return text(list.map((s) => `- ${s.title} (id: ${s.id}) — ${describeRepeat(s)}. ${s.enabled && s.nextRunAt ? `Next: ${new Date(s.nextRunAt).toLocaleString()}` : 'Paused'}`).join('\n'))
+      }),
+      tool('list_workflows', 'List the saved visual workflows (step-by-step processes the user designed).', {}, async () => {
+        const list = workflowsRepo.list()
+        if (!list.length) return text('No workflows yet. The user can design one on the Workflows page.')
+        return text(list.map((w) => `- ${w.name} (id: ${w.id}) — ${w.nodes.filter((n) => n.kind === 'agent').map((n) => n.title).join(' → ')}`).join('\n'))
+      }),
+      tool('run_workflow', 'Run a saved workflow now. Each step runs as a task; the user gets a message when the whole workflow is done.', { workflow_id: z.string() }, async ({ workflow_id }) => {
+        const r = await runWorkflow(workflow_id)
+        return r.ok ? text('The workflow is running. The user can watch it live on the Workflows page.') : text(r.error, true)
+      }),
       askUserTool(tool, ctx),
       notifyTool(tool)
     ]
@@ -264,6 +307,8 @@ export function activityFor(toolName: string, input: Record<string, unknown>, wh
     case 'WebSearch': return `${who} is searching the web…`
     case 'WebFetch': return `${who} is reading a web page…`
     case 'find_skills': return `${who} is looking for the best skills…`
+    case 'schedule_job': return `${who} is adding this to the schedule…`
+    case 'run_workflow': return `${who} is starting the workflow…`
     case 'Read': case 'Glob': case 'Grep': return `${who} is looking through files…`
     case 'Write': case 'Edit': return `${who} is writing…`
     case 'Bash': case 'PowerShell': return `${who} is running a command…`

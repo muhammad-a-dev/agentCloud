@@ -1,6 +1,6 @@
 import type {
   Agent, AgentTemplate, AppEvent, AuthStatus, ChromeStatus, TelegramStatus, ChatItem, Conversation, McpServerEntry, PluginEntry,
-  SearchResult, Settings, SkillEntry, Task, TaskEvent, UsageSummary
+  SearchResult, Settings, SkillEntry, Task, TaskEvent, UsageSummary, Workflow, WorkflowTemplate, Schedule
 } from './types'
 
 /** Result wrapper so the renderer never receives raw exceptions. */
@@ -50,6 +50,8 @@ export interface AgentCloudApi {
   conversationsOpenForAgent(agentId: string): Promise<Conversation>
   conversationsRename(id: string, title: string): Promise<void>
   conversationsDelete(id: string): Promise<void>
+  /** Empty the chat and start fresh with the same agent. */
+  conversationsClear(id: string): Promise<void>
   chatItems(conversationId: string): Promise<ChatItem[]>
   chatSend(conversationId: string, text: string, attachments?: string[]): Promise<Result<void>>
   chatStop(conversationId: string): Promise<void>
@@ -100,6 +102,25 @@ export interface AgentCloudApi {
   telegramUnlink(chatId: number): Promise<TelegramStatus>
   telegramNewCode(): Promise<TelegramStatus>
 
+  // workflows
+  workflowsList(): Promise<Workflow[]>
+  workflowTemplates(): Promise<WorkflowTemplate[]>
+  workflowsCreate(input: { name?: string; template?: string }): Promise<Workflow>
+  workflowsSave(wf: Workflow): Promise<Workflow>
+  workflowsDelete(id: string): Promise<void>
+  workflowsLayout(id: string): Promise<Workflow | null>
+  workflowsRun(id: string): Promise<Result<void>>
+  workflowsStop(id: string): Promise<void>
+  workflowsChat(id: string, text: string): Promise<Result<Workflow>>
+  workflowsChatBusy(): Promise<string[]>
+
+  // schedules
+  schedulesList(): Promise<Schedule[]>
+  schedulesSave(s: Partial<Schedule> & { title: string }): Promise<Result<Schedule>>
+  schedulesDelete(id: string): Promise<void>
+  schedulesToggle(id: string, enabled: boolean): Promise<Schedule | null>
+  schedulesRunNow(id: string): Promise<Result<void>>
+
   // misc
   usageSummary(): Promise<UsageSummary>
   search(q: string): Promise<SearchResult[]>
@@ -111,7 +132,7 @@ export const API_METHODS: (keyof AgentCloudApi)[] = [
   'authCheck', 'authSaveApiKey', 'authClearApiKey', 'authOpenSignIn',
   'settingsGet', 'settingsSet',
   'agentsList', 'agentsSave', 'agentsDelete', 'agentsDuplicate', 'agentsTemplates', 'agentsExport', 'agentsImport',
-  'conversationsList', 'conversationsCreate', 'conversationsOpenForAgent', 'conversationsRename', 'conversationsDelete',
+  'conversationsList', 'conversationsCreate', 'conversationsOpenForAgent', 'conversationsRename', 'conversationsDelete', 'conversationsClear',
   'chatItems', 'chatSend', 'chatStop', 'chatRetry', 'chatBusy', 'answerQuestion', 'answerPermission', 'importAttachments',
   'tasksList', 'tasksEvents', 'tasksCreate', 'tasksStart', 'tasksCancel', 'tasksRetry', 'tasksResume', 'tasksReassign',
   'tasksMoveToTodo', 'tasksAskManagerToFix', 'tasksDelete', 'stopAll',
@@ -119,6 +140,8 @@ export const API_METHODS: (keyof AgentCloudApi)[] = [
   'skillsList', 'skillsAdd', 'skillsToggle', 'skillsRemove',
   'pluginsList', 'pluginsToggle', 'pluginsInstallLocal', 'pluginsInstallMarketplace', 'pluginsRemove',
   'chromeStatus', 'telegramStatus', 'telegramConnect', 'telegramDisconnect', 'telegramUnlink', 'telegramNewCode',
+  'workflowsList', 'workflowTemplates', 'workflowsCreate', 'workflowsSave', 'workflowsDelete', 'workflowsLayout', 'workflowsRun', 'workflowsStop', 'workflowsChat', 'workflowsChatBusy',
+  'schedulesList', 'schedulesSave', 'schedulesDelete', 'schedulesToggle', 'schedulesRunNow',
   'usageSummary', 'search'
 ]
 

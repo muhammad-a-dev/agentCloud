@@ -9,6 +9,9 @@ import type { AuthStatus, Capability, ChromeStatus, FriendlyError, ModelChoice }
 import { settingsRepo } from '../db/repos'
 import { log } from '../logging'
 
+/** Name of the in-process tool server that lets agents control the app. Lives here so any module can use it without import cycles. */
+export const APP_SERVER = 'agentcloud'
+
 let sdkPromise: Promise<typeof SDK> | null = null
 
 /** The SDK is ESM-only; the main bundle is CommonJS, so load it with a real dynamic import. */

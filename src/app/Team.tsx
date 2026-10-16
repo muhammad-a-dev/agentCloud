@@ -3,6 +3,7 @@ import { Copy, Download, MessageSquare, Pencil, Plus, Upload, UserMinus, Users }
 import { useEffect, useState } from 'react'
 import type { Agent, AgentTemplate, Capability, McpServerEntry, ModelChoice, SkillEntry } from '@shared/types'
 import { AgentAvatar } from '@/components/Avatars'
+import { AvatarPicker } from '@/components/AvatarPicker'
 import { Button, Confirm, EmptyState, Field, Modal, Pill, Toggle, inputCls } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { api } from '@/lib/ipc'
@@ -25,7 +26,7 @@ export const MODELS: { key: ModelChoice; label: string; hint: string }[] = [
   { key: 'fastest', label: 'Fastest', hint: 'Quick and cheap for simple jobs.' }
 ]
 
-const EMOJIS = ['🤖', '🔎', '✍️', '💻', '✉️', '📊', '🎨', '📅', '🧠', '🛠️', '📚', '🚀']
+const EMOJIS = ['🤖', '🔎', '✍️', '💻', '✉️', '📊', '🎨', '📅', '🧠', '🛠️', '📚', '🚀', '📈', '🕵️', '🎯', '💬', '🧾', '🌐', '📣', '🧪']
 const COLORS = ['#F7A51C', '#F97316', '#EAB308', '#FB923C', '#22C55E', '#3B82F6', '#A855F7', '#EC4899']
 
 export function TeamPage() {
@@ -170,8 +171,9 @@ export function AgentEditor({ agent, onClose }: { agent: Partial<Agent> | null; 
           <Field label="Role"><input className={inputCls} value={a.role ?? ''} onChange={(e) => set('role', e.target.value)} placeholder="One line about what they do" /></Field>
         </div>
       </div>
-      <Field label="Look">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <Field label="Look" hint="Pick a character, an icon, or upload your own picture.">
+        <AvatarPicker value={a.avatar ?? 'blob'} onChange={(v) => set('avatar', v)} size={32} onError={(m) => toast('error', m)} />
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
           <button onClick={() => set('avatar', 'blob')} className={cx('rounded-lg p-0.5 border-2', a.avatar === 'blob' ? 'border-accent' : 'border-transparent')}><AgentAvatar avatar="blob" color={a.color ?? '#F7A51C'} size={30} /></button>
           {EMOJIS.map((e) => (
             <button key={e} onClick={() => set('avatar', e)} className={cx('w-[34px] h-[34px] rounded-lg text-[18px] border-2', a.avatar === e ? 'border-accent bg-card-hover' : 'border-transparent hover:bg-card')}>{e}</button>

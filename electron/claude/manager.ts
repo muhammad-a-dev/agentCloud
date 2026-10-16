@@ -6,11 +6,11 @@ import type { Agent, ChatItem, FriendlyError } from '@shared/types'
 import { agentsRepo, convRepo, msgRepo, settingsRepo, usageRepo } from '../db/repos'
 import { emit } from '../events'
 import { log } from '../logging'
-import { APP_SERVER, activityFor, agentServer, managerServer } from './appTools'
+import { activityFor, agentServer, managerServer } from './appTools'
 import { enabledSkillsFor, listMcpServers, localPluginConfigs, mcpConfigsFor } from './config'
 import { SAFE_TOOLS, pushItem, requestPermission } from './interactions'
 import {
-  BROWSER_GUIDE, MODEL_IDS, browserOptions, classifyError, claudeExecutable, friendlyFromCode, loadSdk, permissionOptions, sessionEnv, toolsFor
+  APP_SERVER, BROWSER_GUIDE, MODEL_IDS, browserOptions, classifyError, claudeExecutable, friendlyFromCode, loadSdk, permissionOptions, sessionEnv, toolsFor
 } from './sdk'
 import { telegramChatFor } from '../telegram'
 import { mediaFromToolResult } from '../media'
@@ -111,6 +111,10 @@ Several tasks can run at the same time — split big jobs into parallel tasks wh
 Tasks run in the background. When one finishes you get a message starting with "[agentCloud update]". Then tell the user what was done in plain words,
 link the task as [Task title](task://TASK_ID) and every file as [file name](file://relative/path/inside/workspace).
 Whenever the user must choose between options, use ask_user instead of listing options in text.
+
+## Schedules and workflows
+If the user wants something done later or on repeat ("every Monday", "tomorrow at 9"), use schedule_job — give an agent a clear brief, or run a saved workflow.
+Today is ${new Date().toDateString()}. The user designs step-by-step workflows on the Workflows page; list_workflows and run_workflow let you run them.
 ${MEDIA_GUIDE}
 ${chrome ? BROWSER_GUIDE : ''}
 ${opts.telegram ? `

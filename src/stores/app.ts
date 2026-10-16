@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import type { Agent, AppEvent, AuthStatus, ChatItem, Conversation, Settings, Task } from '@shared/types'
+import type { Agent, AppEvent, AuthStatus, ChatItem, Conversation, Schedule, Settings, Task, Workflow } from '@shared/types'
 import { api } from '@/lib/ipc'
 
-export type Route = 'chat' | 'tasks' | 'team' | 'settings'
+export type Route = 'chat' | 'tasks' | 'team' | 'settings' | 'workflows' | 'schedule'
 export type SettingsSection = 'general' | 'connections' | 'telegram' | 'skills' | 'plugins' | 'agents' | 'permissions' | 'account' | 'advanced'
 
 export interface Toast {
@@ -26,6 +26,12 @@ interface AppState {
   agents: Agent[]
   conversations: Conversation[]
   tasks: Task[]
+  workflows: Workflow[]
+  schedules: Schedule[]
+  workflowChatBusy: Record<string, boolean>
+  activeWorkflowId: string | null
+  sidebarOpen: boolean
+  workflowPanelOpen: boolean
   route: Route
   settingsSection: SettingsSection
   activeConversationId: string | null
@@ -47,6 +53,12 @@ interface AppState {
   refreshAgents(): Promise<void>
   refreshConversations(): Promise<void>
   refreshTasks(): Promise<void>
+  refreshWorkflows(): Promise<void>
+  refreshSchedules(): Promise<void>
+  openWorkflow(id: string | null): void
+  toggleSidebar(open?: boolean): void
+  toggleWorkflowPanel(open?: boolean): void
+  clearChat(id: string): Promise<void>
   setRoute(r: Route): void
   openSettings(s?: SettingsSection): void
   openConversation(id: string): Promise<void>
@@ -66,6 +78,26 @@ interface AppState {
 
 let toastSeq = 1
 const LAST_CONV_KEY = 'agentcloud:lastConversation'
+const SIDEBAR_KEY = 'agentcloud:sidebarOpen'
+const WF_PANEL_KEY = 'agentcloud:workflowPanelOpen'
+
+/** Remembered show/hide choices; storage can be unavailable, so fall back quietly. */
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
+
+function writeFlag(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
 
 function upsertItem(list: ChatItem[] = [], item: ChatItem): ChatItem[] {
   const i = list.findIndex((x) => x.id === item.id)
@@ -82,6 +114,12 @@ export const useApp = create<AppState>((set, get) => ({
   agents: [],
   conversations: [],
   tasks: [],
+  workflows: [],
+  schedules: [],
+  workflowChatBusy: {},
+  activeWorkflowId: null,
+  sidebarOpen: readFlag(SIDEBAR_KEY, true),
+  workflowPanelOpen: readFlag(WF_PANEL_KEY, true),
   route: 'chat',
   settingsSection: 'general',
   activeConversationId: null,
@@ -100,11 +138,11 @@ export const useApp = create<AppState>((set, get) => ({
   celebrate: null,
 
   async init() {
-    const [settings, agents, conversations, tasks, busy] = await Promise.all([
-      api.settingsGet(), api.agentsList(), api.conversationsList(), api.tasksList(), api.chatBusy()
+    const [settings, agents, conversations, tasks, busy, workflows, schedules, wfBusy] = await Promise.all([
+      api.settingsGet(), api.agentsList(), api.conversationsList(), api.tasksList(), api.chatBusy(), api.workflowsList(), api.schedulesList(), api.workflowsChatBusy()
     ])
     document.documentElement.dataset.theme = settings.theme
-    set({ settings, agents, conversations, tasks, busy, ready: true })
+    set({ settings, agents, conversations, tasks, busy, workflows, schedules, workflowChatBusy: Object.fromEntries(wfBusy.map((id) => [id, true])), ready: true })
     if (settings.onboarded) {
       let last: string | null = null
       try {
@@ -131,6 +169,35 @@ export const useApp = create<AppState>((set, get) => ({
   },
   async refreshTasks() {
     set({ tasks: await api.tasksList() })
+  },
+  async refreshWorkflows() {
+    set({ workflows: await api.workflowsList() })
+  },
+  async refreshSchedules() {
+    set({ schedules: await api.schedulesList() })
+  },
+  openWorkflow(id) {
+    set({ activeWorkflowId: id, route: 'workflows' })
+  },
+  toggleSidebar(open) {
+    const sidebarOpen = open ?? !get().sidebarOpen
+    writeFlag(SIDEBAR_KEY, sidebarOpen)
+    set({ sidebarOpen })
+  },
+  toggleWorkflowPanel(open) {
+    const workflowPanelOpen = open ?? !get().workflowPanelOpen
+    writeFlag(WF_PANEL_KEY, workflowPanelOpen)
+    set({ workflowPanelOpen })
+  },
+  async clearChat(id) {
+    await api.conversationsClear(id)
+    set((s) => {
+      const drafts = { ...s.drafts }
+      const busy = { ...s.busy }
+      delete drafts[id]
+      delete busy[id]
+      return { items: { ...s.items, [id]: [] }, drafts, busy, queue: s.queue.filter((q) => q.conversationId !== id) }
+    })
   },
 
   setRoute(route) {
@@ -263,6 +330,21 @@ export const useApp = create<AppState>((set, get) => ({
           return { tasks }
         })
         void get().refreshAgents()
+        return
+      case 'workflows:changed':
+        void get().refreshWorkflows()
+        return
+      case 'workflow:update':
+        set((s) => {
+          const i = s.workflows.findIndex((w) => w.id === e.workflow.id)
+          return { workflows: i === -1 ? [e.workflow, ...s.workflows] : s.workflows.map((w) => (w.id === e.workflow.id ? e.workflow : w)) }
+        })
+        return
+      case 'workflow:chat':
+        set((s) => ({ workflowChatBusy: { ...s.workflowChatBusy, [e.workflowId]: e.busy } }))
+        return
+      case 'schedules:changed':
+        void get().refreshSchedules()
         return
       case 'task:celebrate':
         set({ celebrate: { taskId: e.taskId, at: Date.now() } })

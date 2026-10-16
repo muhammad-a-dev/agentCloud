@@ -98,6 +98,8 @@ export interface Settings {
   managerAvatar: string
   managerPersona: string
   userName: string
+  /** Picture for the user: an avatar id or an uploaded image (data URL). Empty = initials. */
+  userAvatar: string
   theme: 'dark' | 'light'
   launchOnStartup: boolean
   notifications: boolean
@@ -108,6 +110,95 @@ export interface Settings {
   localPlugins: string[]
   chromeEnabled: boolean
   telegramEnabled: boolean
+}
+
+// ---------------------------------------------------------------- workflows
+
+export type WorkflowNodeKind = 'start' | 'agent' | 'end'
+
+export interface WorkflowNode {
+  id: string
+  kind: WorkflowNodeKind
+  x: number
+  y: number
+  title: string
+  /** What this step should do. */
+  instructions: string
+  /** The team member who does the step; null = a new specialist is hired from `role` when the workflow runs. */
+  agentId: string | null
+  role: string
+}
+
+export interface WorkflowEdge {
+  id: string
+  from: string
+  to: string
+}
+
+export interface WorkflowChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  createdAt: number
+}
+
+export type StepStatus = 'waiting' | 'running' | 'done' | 'failed' | 'skipped'
+
+export interface WorkflowRun {
+  id: string
+  status: 'running' | 'done' | 'failed' | 'cancelled'
+  startedAt: number
+  finishedAt: number | null
+  steps: Record<string, { status: StepStatus; taskId?: string; error?: string }>
+}
+
+export interface Workflow {
+  id: string
+  name: string
+  description: string
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  chat: WorkflowChatMessage[]
+  lastRun: WorkflowRun | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface WorkflowTemplate {
+  key: string
+  name: string
+  description: string
+  steps: number
+}
+
+// ---------------------------------------------------------------- schedules
+
+export type ScheduleRepeat = 'once' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'monthly'
+
+export interface Schedule {
+  id: string
+  title: string
+  /** Run a workflow, or give an agent a job. */
+  kind: 'workflow' | 'agent'
+  workflowId: string | null
+  agentId: string | null
+  prompt: string
+  repeat: ScheduleRepeat
+  /** Local time, HH:MM. */
+  time: string
+  /** YYYY-MM-DD, for one-time schedules. */
+  date: string | null
+  /** 0 (Sunday) – 6, for weekly schedules. */
+  weekday: number
+  /** 1 – 28, for monthly schedules. */
+  dayOfMonth: number
+  enabled: boolean
+  nextRunAt: number | null
+  lastRunAt: number | null
+  lastStatus: 'started' | 'failed' | 'missed' | null
+  lastError: string | null
+  createdAt: number
+  updatedAt: number
 }
 
 export interface AuthStatus {
@@ -191,6 +282,10 @@ export type AppEvent =
   | { type: 'window:maximized'; value: boolean }
   | { type: 'shortcut'; name: 'stop-all' }
   | { type: 'telegram:status'; status: TelegramStatus }
+  | { type: 'workflows:changed' }
+  | { type: 'workflow:update'; workflow: Workflow }
+  | { type: 'workflow:chat'; workflowId: string; busy: boolean }
+  | { type: 'schedules:changed' }
 
 export interface AgentTemplate {
   key: string

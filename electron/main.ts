@@ -18,6 +18,8 @@ import { answer } from './claude/interactions'
 import { abortAllChats, busyMap, deliverToManager, dropSession, resetIdleSessions, sessionFor } from './claude/manager'
 import { checkAuth, chromeStatus, claudeExecutable, clearApiKey, storeApiKey, workspaceOk } from './claude/sdk'
 import { ensureFindSkills } from './claude/skillHub'
+import { autoLayout, createWorkflow, isWorkflowChatBusy, markInterruptedWorkflows, runWorkflow, stopWorkflow, workflowChat, workflowTemplates, workflowsRepo } from './workflows'
+import { deleteSchedule, runScheduleNow, saveSchedule, schedulesRepo, setScheduleEnabled, startScheduler, stopScheduler } from './scheduler'
 import { handleMediaProtocol, registerMediaScheme, workspacePath } from './media'
 import { connectTelegram, disconnectTelegram, newPairingCode, startTelegram, stopTelegram, telegramStatus, unlinkTelegramChat } from './telegram'
 
@@ -310,6 +312,14 @@ const handlers: Handlers = {
     convRepo.rename(id, title.trim() || 'Untitled chat')
     emit({ type: 'conversations:changed' })
   },
+  conversationsClear: async (id) => {
+    dropSession(id)
+    convRepo.clear(id)
+    const conv = convRepo.get(id)
+    const agent = conv ? agentsRepo.get(conv.agentId) : null
+    if (conv && agent?.isManager) convRepo.rename(id, 'New chat')
+    emit({ type: 'conversations:changed' })
+  },
   conversationsDelete: async (id) => {
     dropSession(id)
     convRepo.delete(id)
@@ -516,6 +526,58 @@ Pick or hire the right agent, then create_task with a complete brief and start_t
   telegramUnlink: async (chatId) => unlinkTelegramChat(chatId),
   telegramNewCode: async () => newPairingCode(),
 
+  workflowsList: async () => workflowsRepo.list(),
+  workflowTemplates: async () => workflowTemplates(),
+  workflowsCreate: async (input) => createWorkflow(input),
+  workflowsSave: async (wf) => {
+    // The window never changes a run in progress; keep the stored one.
+    const stored = workflowsRepo.get(wf.id)
+    const saved = workflowsRepo.save({ ...wf, lastRun: stored?.lastRun ?? wf.lastRun, chat: stored?.chat ?? wf.chat })
+    emit({ type: 'workflows:changed' })
+    return saved
+  },
+  workflowsDelete: async (id) => {
+    stopWorkflow(id)
+    workflowsRepo.delete(id)
+    for (const s of schedulesRepo.list()) if (s.workflowId === id) deleteSchedule(s.id)
+    emit({ type: 'workflows:changed' })
+  },
+  workflowsLayout: async (id) => {
+    const wf = workflowsRepo.get(id)
+    if (!wf) return null
+    const saved = workflowsRepo.save(autoLayout(wf))
+    emit({ type: 'workflow:update', workflow: saved })
+    return saved
+  },
+  workflowsRun: async (id) => {
+    const r = await runWorkflow(id)
+    return r.ok ? { ok: true, data: undefined } : r
+  },
+  workflowsStop: async (id) => stopWorkflow(id),
+  workflowsChat: async (id, text) => {
+    try {
+      return { ok: true, data: await workflowChat(id, text) }
+    } catch (e) {
+      return err(e)
+    }
+  },
+  workflowsChatBusy: async () => workflowsRepo.list().map((w) => w.id).filter(isWorkflowChatBusy),
+
+  schedulesList: async () => schedulesRepo.list(),
+  schedulesSave: async (input) => {
+    try {
+      return { ok: true, data: saveSchedule(input) }
+    } catch (e) {
+      return err(e)
+    }
+  },
+  schedulesDelete: async (id) => deleteSchedule(id),
+  schedulesToggle: async (id, enabled) => setScheduleEnabled(id, enabled),
+  schedulesRunNow: async (id) => {
+    const r = await runScheduleNow(id)
+    return r.ok ? { ok: true, data: undefined } : r
+  },
+
   usageSummary: async () => usageRepo.summary(),
   search: async (q) => (q.trim() ? searchAll(q.trim()) : [])
 }
@@ -543,6 +605,7 @@ app.whenReady().then(() => {
     const interrupted = tasksRepo.markInterrupted()
     if (interrupted) log.info(`Marked ${interrupted} task(s) as interrupted after restart`)
     msgRepo.expirePending()
+    markInterruptedWorkflows()
   } catch (e) {
     log.error('startup failed', e)
     dialog.showErrorBox('agentCloud could not start', 'Its data file could not be opened. Try restarting your computer. If that does not help, reinstall agentCloud.')
@@ -550,6 +613,11 @@ app.whenReady().then(() => {
   registerIpc()
   handleMediaProtocol()
   createWindow()
+  try {
+    startScheduler()
+  } catch (e) {
+    log.error('scheduler start failed', e)
+  }
   // The Manager's find-skills skill: download it once, quietly, if it is missing.
   void ensureFindSkills()
   try {
@@ -575,6 +643,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  stopScheduler()
   stopTelegram()
   stopAll()
 })

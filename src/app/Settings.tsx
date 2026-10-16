@@ -5,9 +5,10 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { McpServerEntry, PluginEntry, SkillEntry, UsageSummary } from '@shared/types'
-import { AgentAvatar, MANAGER_AVATARS, ManagerAvatar } from '@/components/Avatars'
+import { AgentAvatar, ManagerAvatar, UserAvatar } from '@/components/Avatars'
+import { AvatarPicker } from '@/components/AvatarPicker'
 import { Button, Confirm, Field, Modal, Pill, SectionTitle, Skeleton, Toggle, inputCls } from '@/components/ui'
-import { compact, cx, money } from '@/lib/format'
+import { compact, cx, initials, money } from '@/lib/format'
 import { api } from '@/lib/ipc'
 import { useApp, type SettingsSection } from '@/stores/app'
 import { AuthPanel } from './Overlays'
@@ -95,12 +96,9 @@ function General() {
       <Card>
         <div className="flex items-center gap-4 mb-4">
           <ManagerAvatar avatar={settings.managerAvatar} size={64} badge />
-          <div className="flex gap-2">
-            {MANAGER_AVATARS.map((a) => (
-              <button key={a} aria-label={`Avatar ${a}`} onClick={() => updateSettings({ managerAvatar: a })} className={cx('rounded-full p-0.5 border-2', settings.managerAvatar === a ? 'border-accent' : 'border-transparent hover:border-line-strong')}>
-                <ManagerAvatar avatar={a} size={40} />
-              </button>
-            ))}
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] text-fg-2 mb-1.5">Manager's look — pick one or upload a picture</div>
+            <AvatarPicker value={settings.managerAvatar} onChange={(v) => updateSettings({ managerAvatar: v })} size={36} onError={(m) => toast('error', m)} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-x-4">
@@ -109,6 +107,14 @@ function General() {
         </div>
         <Field label="Personality" hint="How should your Manager talk to you?"><SavedInput multiline value={settings.managerPersona} onSave={(v) => updateSettings({ managerPersona: v })} /></Field>
         <Field label="Your name"><SavedInput value={settings.userName} onSave={(v) => updateSettings({ userName: v.trim() })} placeholder="What should agents call you?" /></Field>
+        <Field label="Your picture" hint="Shown at the bottom of the sidebar.">
+          <div className="flex items-center gap-4">
+            <UserAvatar name={settings.userName || 'Me'} avatar={settings.userAvatar} size={56} />
+            <div className="flex-1 min-w-0">
+              <AvatarPicker value={settings.userAvatar} onChange={(v) => updateSettings({ userAvatar: v })} size={32} allowNone={initials(settings.userName || 'Me')} onError={(m) => toast('error', m)} />
+            </div>
+          </div>
+        </Field>
       </Card>
       <Card>
         <WorkspaceRow />

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Pencil, Upload, UserCog, Check } from 'lucide-react'
+import { ChevronDown, Pencil, Upload, UserCog, Check, Eraser, MessageSquarePlus } from 'lucide-react'
+import { Confirm, IconButton } from '@/components/ui'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem } from '@shared/types'
 import { AgentAvatar, ManagerAvatar } from '@/components/Avatars'
@@ -24,10 +25,15 @@ export function ChatHeaderPill() {
   const agent = agents.find((a) => a.id === conv?.agentId)
   const [title, setTitle] = useState(conv?.title ?? '')
   useEffect(() => setTitle(conv?.title ?? ''), [conv?.title])
+  const [confirmClear, setConfirmClear] = useState(false)
+  const newChat = useApp((s) => s.newChat)
+  const clearChat = useApp((s) => s.clearChat)
+  const toast = useApp((s) => s.toast)
   if (!conv || !agent) return null
   const label = agent.isManager ? conv.title : agent.name
 
   return (
+    <div className="flex items-center gap-2 no-drag">
     <div className="relative no-drag">
       {renaming ? (
         <input
@@ -81,12 +87,33 @@ export function ChatHeaderPill() {
                 ))}
               </div>
               <div className="h-px bg-line my-1.5" />
+              <MenuItem icon={<MessageSquarePlus size={14} />} label="Start a new chat" onClick={() => { setOpen(false); void newChat() }} />
+              <MenuItem icon={<Eraser size={14} />} label="Clear this chat" onClick={() => { setOpen(false); setConfirmClear(true) }} />
               <MenuItem icon={<Pencil size={14} />} label="Rename this chat" onClick={() => { setOpen(false); setRenaming(true) }} />
               {!agent.isManager && <MenuItem icon={<UserCog size={14} />} label={`Edit ${agent.name}`} onClick={() => { setOpen(false); setRoute('team') }} />}
             </motion.div>
           </>
         )}
       </AnimatePresence>
+    </div>
+      <IconButton label="New chat (Ctrl+N)" onClick={() => void newChat()} className="w-[38px] h-[38px]">
+        <MessageSquarePlus size={16} />
+      </IconButton>
+      <IconButton label="Clear this chat" onClick={() => setConfirmClear(true)} className="w-[38px] h-[38px]">
+        <Eraser size={16} />
+      </IconButton>
+      <Confirm
+        open={confirmClear}
+        title="Clear this chat?"
+        message={`All messages in “${label}” will be removed and ${agent.name} will start fresh. Your files and tasks stay as they are.`}
+        confirmLabel="Clear chat"
+        danger
+        onConfirm={async () => {
+          await clearChat(conv.id)
+          toast('success', 'Chat cleared. Start fresh!')
+        }}
+        onClose={() => setConfirmClear(false)}
+      />
     </div>
   )
 }

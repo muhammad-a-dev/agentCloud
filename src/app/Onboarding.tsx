@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, FolderOpen, Sparkles, Users, ClipboardCheck, Check } from 'lucide-react'
 import { useState } from 'react'
-import { MANAGER_AVATARS, ManagerAvatar } from '@/components/Avatars'
+import { ManagerAvatar } from '@/components/Avatars'
+import { AvatarPicker } from '@/components/AvatarPicker'
 import { WindowControls } from '@/components/Chrome'
 import { Button, Field, inputCls } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -115,12 +116,11 @@ export function Onboarding() {
                   <div>
                     <h2 className="text-[24px] font-semibold mb-1">Meet your Manager</h2>
                     <p className="text-fg-2 mb-6">Give them a name and a look. You can change this any time.</p>
-                    <div className="flex gap-3 mb-6">
-                      {MANAGER_AVATARS.map((a) => (
-                        <button key={a} aria-label={`Avatar ${a}`} onClick={() => setAvatar(a)} className={cx('rounded-full p-1 border-2 transition', avatar === a ? 'border-accent' : 'border-transparent hover:border-line-strong')}>
-                          <ManagerAvatar avatar={a} size={64} />
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-4 mb-6">
+                      <ManagerAvatar avatar={avatar} size={84} badge />
+                      <div className="flex-1 max-h-[132px] overflow-y-auto pr-1">
+                        <AvatarPicker value={avatar} onChange={setAvatar} size={40} onError={(m) => useApp.getState().toast('error', m)} />
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <Field label="Manager's name"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Drake" /></Field>
